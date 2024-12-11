@@ -1,7 +1,7 @@
 package main
 
 import (
-	
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -22,8 +22,8 @@ const (
 )
 
 type CrawlResult struct {
-	URLs        map[string]bool
-	Parameters  map[string][]string
+	URLs         map[string]bool
+	Parameters   map[string][]string
 	TargetFolder string
 }
 
@@ -74,6 +74,7 @@ func crawlDomain(target string, crawlSubdomains bool) (*CrawlResult, error) {
 	crawledURLs := make(map[string]bool)
 	parameters := make(map[string][]string)
 	toVisit := []string{target}
+	uniqueURLs := make(map[string]bool)
 
 	parsedTarget, err := url.Parse(target)
 	if err != nil {
@@ -90,6 +91,12 @@ func crawlDomain(target string, crawlSubdomains bool) (*CrawlResult, error) {
 	for len(toVisit) > 0 {
 		currentURL := toVisit[0]
 		toVisit = toVisit[1:]
+
+		// Skip if already visited or processed
+		if uniqueURLs[currentURL] {
+			continue
+		}
+		uniqueURLs[currentURL] = true
 
 		if crawledURLs[currentURL] {
 			continue
@@ -131,7 +138,9 @@ func crawlDomain(target string, crawlSubdomains bool) (*CrawlResult, error) {
 
 			// Crawl conditions
 			if crawlSubdomains || isInternalURL(absoluteURL, targetDomain) {
-				toVisit = append(toVisit, absoluteURL)
+				if !uniqueURLs[absoluteURL] {
+					toVisit = append(toVisit, absoluteURL)
+				}
 			}
 
 			// Extract GET parameters
@@ -152,8 +161,8 @@ func crawlDomain(target string, crawlSubdomains bool) (*CrawlResult, error) {
 	}
 
 	return &CrawlResult{
-		URLs:        crawledURLs,
-		Parameters:  parameters,
+		URLs:         crawledURLs,
+		Parameters:   parameters,
 		TargetFolder: targetFolder,
 	}, nil
 }
@@ -188,24 +197,12 @@ func checkReflectedParameter(baseURL string, param string) string {
 	return ""
 }
 
-func main() {
-	printBanner()
-
-	// Parse flags
-	target := flag.String("t", "", "Target domain to crawl (e.g., http://example.com)")
-	crawlSubdomains := flag.Bool("s", false, "Crawl subdomains as well")
-	flag.Parse()
-
-	if *target == "" {
-		color.Red("[!] Target URL is required . use -h for help")
-		os.Exit(1)
-	}
-
+func processTarget(targetURL string, crawlSubdomains bool) {
 	// Crawl domain
-	crawlResult, err := crawlDomain(*target, *crawlSubdomains)
+	crawlResult, err := crawlDomain(targetURL, crawlSubdomains)
 	if err != nil {
-		color.Red("[!] Crawling error {Use http:// or https:// in domain & in  urls }: %v", err)
-		os.Exit(1)
+		color.Red("[!] Crawling error {Use http:// or https:// in domain & in urls}: %v", err)
+		return
 	}
 
 	color.Yellow("[*] Crawled %d unique pages", len(crawlResult.URLs))
@@ -213,7 +210,7 @@ func main() {
 
 	// Test reflected parameters
 	color.Yellow("[*] Testing for reflected parameters...")
-	var reflectedResults []string
+	var reflectedResults = make(map[string]bool)
 	var wg sync.WaitGroup
 	resultChan := make(chan string, 100)
 
@@ -236,19 +233,19 @@ func main() {
 	}()
 
 	for result := range resultChan {
-		reflectedResults = append(reflectedResults, result)
+		reflectedResults[result] = true
 	}
 
 	// Output results
 	if len(reflectedResults) > 0 {
 		color.Green("\n[+] Reflected Parameters Found:")
-		for _, result := range reflectedResults {
+		for result := range reflectedResults {
 			color.Green("[Reflected] %s", result)
 
 			// Save to file
 			resultFile := filepath.Join(crawlResult.TargetFolder, "reflected_parameters.txt")
 			f, err := os.OpenFile(resultFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			 if err == nil {
+			if err == nil {
 				defer f.Close()
 				if _, err := f.WriteString(result + "\n"); err != nil {
 					color.Red("[!] Error writing to file: %v", err)
@@ -256,6 +253,46 @@ func main() {
 			}
 		}
 	} else {
-		color.Red("\n[-] No reflected parameters found.")
+		 color.Red("\n[-] No reflected parameters found.")
+	}
+}
+
+func main() {
+	printBanner()
+
+	// Parse flags
+	target := flag.String("t", "", "Target domain to crawl (e.g., http://example.com)")
+	crawlSubdomains := flag.Bool("s", false, "Crawl subdomains as well")
+	flag.Parse()
+
+	// Check if stdin has input
+	stat, _ := os.Stdin.Stat()
+	var targets []string
+
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		// Input is being piped
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			url := strings.TrimSpace(scanner.Text())
+			if url != "" {
+				targets = append(targets, url)
+			}
+		}
+	}
+
+	// If no stdin input and no CLI flag, show error
+	if *target != "" {
+		targets = append(targets, *target)
+	}
+
+	if len(targets) == 0 {
+		color.Red("[!] Target URL is required. Use -t or pipe URLs. Use -h for help")
+		os.Exit(1)
+	}
+
+	// Process each target
+	for _, targetURL := range targets {
+		color.Cyan("\n[*] Processing target: %s", targetURL)
+		processTarget(targetURL, *crawlSubdomains)
 	}
 }
