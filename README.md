@@ -42,10 +42,27 @@ options:
 
 ```bash
  refx -t http://example.com
+``` 
+ 
+
+ Pipe targets from a file
+```bash
+cat targets.txt | refx
 ```
+
+Use with other recon tools
+```bash
+subfinder -d example.com | refx
+```
+
+Combine multiple tools
+```bash
+echo "https://example.com" | httpx | refx
+```
+
 ---
 ```
-./refx -t http://testphp.vulnweb.com      
+./refx -t http://example.com      
 
  
  
@@ -67,9 +84,9 @@ _______   ____\_   _____/__  ___
 [*] Testing for reflected parameters...
 
 [+] Reflected Parameters Found:
-[Reflected] http://testphp.vulnweb.com/listproducts.php?artist=reflect_test_parameter
-[Reflected] http://testphp.vulnweb.com/listproducts.php?cat=reflect_test_parameter
-[Reflected] http://testphp.vulnweb.com/showimage.php?file=reflect_test_parameter
+[Reflected] http://example.com/listproducts.php?artist=reflect_test_parameter
+[Reflected] http://example.com/listproducts.php?cat=reflect_test_parameter
+[Reflected] http://example.com/showimage.php?file=reflect_test_parameter
 ```
 
 ---
