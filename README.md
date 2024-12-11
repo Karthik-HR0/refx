@@ -43,7 +43,7 @@ options:
 ```bash
  refx -t http://example.com
 ``` 
- 
+ # Make sure that the target are in http:// or https:// 
 
  Pipe targets from a file
 ```bash
